@@ -5,7 +5,8 @@ async function init(){
  if(!await chrome.alarms.get('scan'))await chrome.alarms.create('scan',{periodInMinutes:0.5});
 }
 init().catch(()=>{});
-chrome.runtime.onInstalled.addListener(async()=>{
+chrome.runtime.onInstalled.addListener(async details=>{
+ if(details?.reason==='update' && /^0\.4\./.test(details.previousVersion||'')){await init();return;}
  const d=await chrome.storage.local.get('settings');const old=d.settings||{};
  await chrome.storage.local.set({settings:{enabled:false,token:old.token||'',chatId:old.chatId||'',desktop:old.desktop!==false},selector:'',zeroSelector:'',baseline:null,monitorTab:null,status:null,lastError:''});
  await chrome.storage.local.remove(['mapping','autoMapping','autoState','autoStatus','baselines']);await init();
@@ -30,9 +31,9 @@ async function snapshot(msg,sender){
  if(d.lastAttempt && Date.now()-d.lastAttempt<60000){await chrome.storage.local.set({baseline:result.state});return;}
  await chrome.storage.local.set({lastAttempt:Date.now()});
  try{
-  if(cfg.token&&cfg.chatId)await telegram(cfg,`🔔 <b>Новые непрочитанные · Авито</b>\n\nСчётчик вырос: <b>${d.baseline.count} → ${s.count}</b>`);
+  if(cfg.token&&cfg.chatId)await telegram(cfg,`📨 <b>ВАМ ПРИШЛО НОВОЕ СООБЩЕНИЕ</b>\n\nПроверь Авито — вдруг там заказ 👀\nПора превращать пиксели в рубли)`);
   else if(!cfg.desktop)throw Error('Укажи Telegram или включи уведомления Windows');
-  if(cfg.desktop)await chrome.notifications.create('avito',{type:'basic',iconUrl:'icon.png',title:'Непрочитанные на Авито',message:`Счётчик вырос: ${d.baseline.count} → ${s.count}`}).catch(()=>{});
+  if(cfg.desktop)await chrome.notifications.create('avito',{type:'basic',iconUrl:'icon.png',title:'Вам пришло новое сообщение',message:'Проверь Авито — вдруг там заказ 👀 Пора превращать пиксели в рубли)'}).catch(()=>{});
   await chrome.storage.local.set({baseline:result.state,lastSent:Date.now(),lastError:''});
  }catch(e){await chrome.storage.local.set({lastError:e.message});}
 }

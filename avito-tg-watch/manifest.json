@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Авито → ТГ · 29way",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "minimum_chrome_version": "120",
   "description": "Уведомления только о росте выбранного счётчика непрочитанных Авито.",
   "permissions": [
