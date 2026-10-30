@@ -27,6 +27,8 @@ chrome.notifications.onClosed.addListener(id=>chrome.storage.local.remove('notic
 async function snapshot(msg,sender){
   const cfg=await settings();const tab=sender.tab;if(!tab)return;
   const snap=msg.snapshot;
+  if(snap?.messages)snap.messages=snap.messages.filter(m=>!WatchDetector.isTyping(m.preview));
+  if(snap?.rows)for(const [id,value] of Object.entries(snap.rows)){let preview=value;try{const parts=JSON.parse(value);if(Array.isArray(parts))preview=parts[1];}catch{}if(WatchDetector.isTyping(preview))delete snap.rows[id];}
   if(!snap || !Number.isFinite(snap.count) || snap.count<0 || snap.count>100000)return;
   const status={at:Date.now(),tabId:tab.id,mode:snap.mode,found:snap.found,count:snap.count,details:String(snap.details || '').slice(0,300)};
   await chrome.storage.local.set({status});

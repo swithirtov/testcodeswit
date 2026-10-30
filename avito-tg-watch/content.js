@@ -17,7 +17,7 @@ function chatInfo(row, fields){
  const a=row.matches('a[href*="messenger"]')?row:row.querySelector('a[href*="messenger"]');
  let url='';if(a){try{const u=new URL(a.getAttribute('href'),location.origin);if(['avito.ru','www.avito.ru'].includes(u.hostname) && /messenger/.test(u.pathname))url=u.href;}catch{}}
  const id=url||row.getAttribute('data-id')||row.getAttribute('data-channel-id')||(name?name+'|'+title:'');
- return {name,preview,title,url,id};
+ return {name,preview,title,url,id,typing:WatchDetector.isTyping(preview)};
 }
 function richSnapshot(){
  let candidates=[];
@@ -29,16 +29,18 @@ function richSnapshot(){
    if(row && !candidates.includes(row))candidates.push(row);
   }
  }
- const rows={},messages=[];
+ const rows={},messages=[];let typing=false;
  for(const row of candidates){
   let badge;try{badge=row.querySelector(mapping?.badge||'[data-marker*="unread"]');}catch{}
   if(!shown(row)||!shown(badge))continue;
   if(mapping?.badgeKind==='red' && !WatchPicker.unreadDot(badge,getComputedStyle))continue;
   const info=chatInfo(row,mapping);
+  if(info.typing){typing=true;continue;}
   if(!info.id||!info.name||!info.preview)continue;
   rows[info.id]=JSON.stringify([info.name,info.preview,count(badge)]);
   messages.push(info);
  }
+ if(typing && !messages.length)return {found:true,count:0,rows:{},messages:[],mode:'details',details:'Собеседник печатает — жду сообщение'};
  if(messages.length)return {found:true,count:messages.length,rows,messages,mode:'details',details:'Имена и превью распознаны: '+messages.length+' диалогов'};
  // A known mapped list with rows but no unread badges is a confirmed zero.
  if(mapping && candidates.some(shown) && candidates.every(r=>{try{const b=r.querySelector(mapping.badge);return !shown(b)||(mapping.badgeKind==='red' && !WatchPicker.unreadDot(b,getComputedStyle));}catch{return false;}}))return {found:true,count:0,rows:{},messages:[],mode:'details',details:'Список чатов распознан, непрочитанных не видно'};
@@ -65,7 +67,7 @@ function inspect(){
       const a=row.matches('a[href]')?row:row.querySelector('a[href]');
       const id=a?.getAttribute('href') || row.getAttribute('data-id') || row.id;
       const preview=row.querySelector('[data-marker*="last-message"], [data-marker*="lastMessage"], [data-marker*="preview"]');
-      if(id)rows[id]=norm(preview?.textContent)||String(count(b)||1);
+      if(id && !WatchDetector.isTyping(norm(preview?.textContent)))rows[id]=norm(preview?.textContent)||String(count(b)||1);
     }
     if(Object.keys(rows).length)snap={...snap,found:true,count:Object.keys(rows).length,rows,mode:'rows',details:'Найдены непрочитанные диалоги: '+Object.keys(rows).length};
     else{
@@ -97,7 +99,7 @@ function saveAuto(){
  const field=editor.closest('textarea,input,[contenteditable="true"]')||editor;
  const sendButton=button.closest('button,[role="button"]')||button;
  const spec=WatchAuto.reusable(incoming,cssPath);
- autoMapping={route:location.pathname+location.search,name:norm(header.textContent),header:cssPath(header),incoming:spec.selector,incomingRule:spec.visual||null,editor:cssPath(field),button:cssPath(sendButton)};
+ autoMapping={route:location.pathname+location.search,name:norm(header.textContent),header:cssPath(header),incoming:spec.selector,incomingRule:spec.visual||null,editor:cssPath(field),button:cssPath(sendButton),buttonSignature:sendButton.innerHTML.slice(0,8000)};
  stop();send({type:'autoMapping',mapping:autoMapping});
  alert(spec.direction?'Тестовый чат настроен. Включи автоответ в настройках расширения.':'Чат настроен для черновика. Направление сообщений не распознано — автоматическая отправка заблокирована.');
 }

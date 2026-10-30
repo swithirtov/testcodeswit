@@ -3,7 +3,7 @@ const data={settings:{enabled:true,auto:{enabled:true,send:true,text:'Приве
 let listener,sends=0;
 const event={addListener:()=>{}};
 const chrome={storage:{local:{setAccessLevel:async()=>{},get:async keys=>typeof keys==='string'?{[keys]:data[keys]}:Object.fromEntries(keys.map(k=>[k,data[k]])),set:async x=>Object.assign(data,x),remove:async()=>{}}},alarms:{get:async()=>true,onAlarm:event},runtime:{onInstalled:event,onStartup:event,onMessage:{addListener:f=>listener=f}},notifications:{onClicked:event,onClosed:event},tabs:{sendMessage:async()=>{sends++;}}};
-const worker={chrome,importScripts:()=>{},URL,console};vm.createContext(worker);vm.runInContext(fs.readFileSync(__dirname+'/background.js','utf8'),worker);
+const worker={chrome,importScripts:()=>{},URL,console,WatchDetector:require('./detector.js')};vm.createContext(worker);vm.runInContext(fs.readFileSync(__dirname+'/background.js','utf8'),worker);
 const snap=async(count,name='Иван')=>{listener({type:'autoSnapshot',snapshot:{route:'/profile/messenger/123',name,count,fingerprint:'x'+count}},{tab:{id:1}},()=>{});await vm.runInContext('chain',worker);};
 (async()=>{
  await snap(20);assert.equal(sends,0);await snap(20);assert.equal(sends,0);
@@ -11,11 +11,11 @@ const snap=async(count,name='Иван')=>{listener({type:'autoSnapshot',snapshot
  await snap(21);assert.equal(sends,1);await snap(22);assert.equal(sends,1);assert.equal(data.autoState.done,true);
  class TextArea{constructor(){this._v='';}get value(){return this._v;}set value(x){this._v=x;}focus(){}dispatchEvent(){}getClientRects(){return [{}];}}
  const field=new TextArea();const header={textContent:'Иван',getClientRects:()=>[{}]};let clicks=0;
- const button={getClientRects:()=>[{}],getAttribute:()=>null,click:()=>{clicks++;field.value='';}};
- const map={route:'/profile/messenger/123',name:'Иван',header:'#header',editor:'#editor',button:'#send'};
+ const button={innerHTML:'<svg send />',getClientRects:()=>field.value?[{}]:[],getAttribute:()=>null,click:()=>{clicks++;field.value='';}};
+ const map={route:'/profile/messenger/123',name:'Иван',header:'#header',editor:'#editor',button:'#send',buttonSignature:'<svg send />'};
  const context={HTMLTextAreaElement:TextArea,HTMLInputElement:class{},Event:class{},InputEvent:class{},setTimeout:f=>f(),location:{pathname:'/profile/messenger/123',search:''},document:{querySelector:s=>({'#header':header,'#editor':field,'#send':button}[s])}};
  vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/autoreply.js','utf8'),context);
- assert.equal((await context.WatchAuto.fill(map,'Привет <Иван>',false)).status,'draft');assert.equal(clicks,0);assert.equal(field.value,'Привет <Иван>');
+ assert.equal(context.WatchAuto.state(map).ok,true);assert.equal((await context.WatchAuto.fill(map,'Привет <Иван>',false)).status,'draft');assert.equal(clicks,0);assert.equal(field.value,'Привет <Иван>');
  await assert.rejects(()=>context.WatchAuto.fill(map,'overwrite',true),/черновик/);
  field.value='';header.textContent='Другой';await assert.rejects(()=>context.WatchAuto.fill(map,'wrong',true),/Имя/);assert.equal(clicks,0);
  header.textContent='Иван';assert.equal((await context.WatchAuto.fill(map,'Привет!',true)).status,'attempted');assert.equal(clicks,1);

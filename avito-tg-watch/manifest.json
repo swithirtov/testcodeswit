@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Авито → ТГ · 29way",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "minimum_chrome_version": "120",
   "description": "Уведомления о непрочитанных сообщениях из открытой вкладки Авито.",
   "permissions": [

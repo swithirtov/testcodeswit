@@ -42,7 +42,7 @@
   let header,editor,button;
   try{header=document.querySelector(map.header);editor=document.querySelector(map.editor);button=document.querySelector(map.button);}catch{return {ok:false,reason:'Повтори настройку отправки: неверные селекторы'};}
   if(!visible(header)||norm(header.textContent)!==map.name)return {ok:false,reason:'Имя в открытом чате не совпало — отправка остановлена'};
-  if(!visible(editor)||!visible(button))return {ok:false,reason:'Поле ответа или кнопка не найдены'};
+  if(!visible(editor))return {ok:false,reason:'Поле ответа не найдено'};
   return {ok:true,header,editor,button};
  }
  function incoming(map){
@@ -56,6 +56,19 @@
    nodes=nodes.filter(e=>!nodes.some(other=>other!==e&&other.contains(e)));
   }else nodes=[...document.querySelectorAll(map.incoming)].filter(visible);
   return {ok:true,count:nodes.length,fingerprint:JSON.stringify(nodes.slice(-10).map(n=>norm(n.textContent))),last:norm(nodes.at(-1)?.textContent).slice(0,500)};
+ }
+ function sendButton(map,editor){
+  const matches=b=>{
+   if(!visible(b))return false;
+   if(map.buttonSignature)return b.innerHTML===map.buttonSignature;
+   const label=[b.getAttribute('aria-label'),b.getAttribute('title'),b.getAttribute('data-marker')].join(' ');
+   return /send|отправ/i.test(label);
+  };
+  let selected;try{selected=document.querySelector(map.button);}catch{}
+  if(matches(selected))return selected;
+  const box=editor.getBoundingClientRect();
+  const found=[...document.querySelectorAll('button,[role="button"]')].filter(matches).filter(b=>{const r=b.getBoundingClientRect();return Math.abs(r.top-box.top)<100 && r.left>=box.left-60;});
+  return found.length===1?found[0]:null;
  }
  async function fill(map,text,send){
   let st=state(map);if(!st.ok)throw Error(st.reason);
@@ -75,12 +88,14 @@
   if(!send)return {status:'draft',reason:'Черновик подготовлен. Проверь имя и текст, отправь вручную.'};
   st=state(map);if(!st.ok)throw Error(st.reason);
   if(norm(st.editor.value||st.editor.textContent)!==norm(text))throw Error('Авито не принял текст в поле. Автоотправка остановлена');
-  if(st.button.disabled||st.button.getAttribute('aria-disabled')==='true')throw Error('Кнопка отправки неактивна — текст оставлен в черновике');
-  st.button.click();
+  let button;
+  for(let i=0;i<8;i++){button=sendButton(map,st.editor);if(button && !button.disabled && button.getAttribute('aria-disabled')!=='true')break;await new Promise(resolve=>setTimeout(resolve,250));}
+  if(!button || button.disabled || button.getAttribute('aria-disabled')==='true')throw Error('После ввода кнопка отправки не распознана. Текст оставлен в черновике; повтори настройку кнопки с непустым полем.');
+  button.click();
   await new Promise(resolve=>setTimeout(resolve,900));
   const after=state(map);
   if(after.ok && !norm(after.editor.value||after.editor.textContent))return {status:'attempted',reason:'Нажата кнопка отправки, поле очистилось. Проверь доставку в Авито.'};
   throw Error('Кнопка нажата, но поле не очистилось. Повтор автоматически не выполняется — проверь чат.');
  }
- root.WatchAuto={reusable,state,incoming,fill,matchesVisual};
+ root.WatchAuto={reusable,state,incoming,fill,matchesVisual,sendButton};
 })(globalThis);
