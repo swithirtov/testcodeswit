@@ -62,6 +62,20 @@ async function snapshot(msg,sender){
     await chrome.storage.local.set({lastSent:Date.now(),lastError:''});
   }catch(e){await chrome.storage.local.set({lastError:e.message});}
 }
+
+async function autoSnapshot(msg,sender){
+ const d=await chrome.storage.local.get(['autoMapping','settings','autoState']);
+ const cfg=d.settings?.auto||{};const map=d.autoMapping,snap=msg.snapshot;
+ if(!cfg.enabled||!map||!snap||map.route!==snap.route||map.name!==snap.name)return;
+ if(d.autoState?.done)return;
+ const old=d.autoState;
+ if(!old || old.route!==snap.route){await chrome.storage.local.set({autoState:{...snap,done:false},autoStatus:'Наблюдение включено. Старые сообщения пропущены; жду новое входящее.'});return;}
+ if(snap.count<=old.count || snap.fingerprint===old.fingerprint)return;
+ // Reserve before clicking: never retry an ambiguous send automatically.
+ await chrome.storage.local.set({autoState:{...snap,done:true},autoStatus:cfg.send?'Пробую отправить один автоответ…':'Готовлю один черновик…'});
+ try{await chrome.tabs.sendMessage(sender.tab.id,{type:'autoExecute',text:cfg.text,send:!!cfg.send});}
+ catch{await chrome.storage.local.set({autoStatus:'Не удалось связаться с вкладкой. Обнови Авито. Повтор сам не выполняется.'});}
+}
 async function scanTabs(){
   const cfg=await settings();if(!cfg.enabled)return;
   const s=await chrome.storage.local.get('monitorTab');
@@ -74,16 +88,22 @@ chrome.alarms.onAlarm.addListener(a=>{if(a.name==='scan')scanTabs();});
 chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
   // Website scripts may submit snapshots, never read credentials or invoke tests.
   if(sender.tab){
-    if(msg.type==='snapshot'){chain=chain.then(()=>snapshot(msg,sender)).catch(()=>{});}
+    if(msg.type==='autoSnapshot'){chain=chain.then(()=>autoSnapshot(msg,sender)).catch(()=>{});}
+    else if(msg.type==='autoStatus'){chrome.storage.local.set({autoStatus:String(msg.reason).slice(0,300)});}
+    else if(msg.type==='autoResult'){chrome.storage.local.set({autoStatus:String(msg.reason).slice(0,300)});}
+    else if(msg.type==='autoMapping'){chrome.storage.local.set({autoMapping:msg.mapping,autoState:null,autoStatus:'Тестовый чат: '+msg.mapping.name});}
+    else if(msg.type==='snapshot'){chain=chain.then(()=>snapshot(msg,sender)).catch(()=>{});}
     else if(msg.type==='picked'){chrome.storage.local.set({selector:msg.selector,baseline:null,baselines:{},monitorTab:sender.tab.id});}
     else if(msg.type==='mapping'){chrome.storage.local.set({mapping:msg.mapping,baseline:null,baselines:{},monitorTab:sender.tab.id});}
-    else if(msg.type==='getSelector'){chrome.storage.local.get(['selector','mapping']).then(reply);return true;}
+    else if(msg.type==='getSelector'){chrome.storage.local.get(['selector','mapping','autoMapping','settings']).then(s=>reply({selector:s.selector,mapping:s.mapping,autoMapping:s.autoMapping,autoConfig:s.settings?.auto}));return true;}
     return;
   }
   (async()=>{
-    if(msg.type==='load')return await chrome.storage.local.get(['settings','status','lastSent','lastError','selector']);
+    if(msg.type==='load')return await chrome.storage.local.get(['settings','status','lastSent','lastError','selector','autoStatus','autoMapping']);
     if(msg.type==='save'){
       const old=await settings();const cfg=msg.settings;
+      if(cfg.auto?.enabled && !cfg.auto?.text?.trim())throw Error('Введи текст автоответа');
+      if(cfg.auto?.enabled && !old.auto?.enabled)await chrome.storage.local.set({autoState:null,autoStatus:'Жду первую проверку выбранного чата'});
       if(cfg.enabled && ((cfg.token && !cfg.chatId)||(!cfg.token && cfg.chatId)))throw Error('Заполни и токен, и Chat ID');
       await chrome.storage.local.set({settings:cfg,lastError:''});
       if(!old.enabled && cfg.enabled)await chrome.storage.local.set({baseline:null,baselines:{}});
@@ -92,7 +112,14 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
     if(msg.type==='test'){await telegram(msg.settings,{text:'✅ <b>Авито → Telegram подключён</b>\n\nЭто тест отправки. Имя и текст появятся, когда расширение распознает непрочитанный чат.',parse_mode:'HTML'});return {ok:true};}
     if(msg.type==='scan'){await scanTabs();return {ok:true};}
     if(msg.type==='auto'){await chrome.storage.local.set({selector:'',mapping:null,baseline:null,baselines:{}});await scanTabs();return {ok:true};}
-    if(msg.type==='pick'||msg.type==='pickDetails'){
+    if(msg.type==='prepareAuto'){
+      const d=await chrome.storage.local.get('autoMapping');if(!d.autoMapping)throw Error('Сначала настрой тестовый чат');
+      const tabs=await chrome.tabs.query({url:['https://www.avito.ru/*','https://avito.ru/*']});
+      const tab=tabs.find(t=>{try{return new URL(t.url).pathname+new URL(t.url).search===d.autoMapping.route;}catch{return false;}});
+      if(!tab)throw Error('Открой настроенный чат Авито');
+      await chrome.tabs.sendMessage(tab.id,{type:'autoExecute',text:msg.settings.auto.text,send:false});return {ok:true};
+    }
+    if(msg.type==='pick'||msg.type==='pickDetails'||msg.type==='pickAuto'){
       const tabs=await chrome.tabs.query({url:['https://www.avito.ru/*','https://avito.ru/*']});
       const tab=tabs.find(t=>t.active)||tabs.find(t=>/messenger/.test(t.url))||tabs[0];
       if(!tab)throw Error('Сначала открой Авито');
