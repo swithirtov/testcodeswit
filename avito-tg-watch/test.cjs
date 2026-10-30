@@ -48,3 +48,14 @@ assert.equal(format({name:'Иван'},'https://www.avito.ru/profile/messenger').
  assert.equal(atPoint([shield,row,menu,dot],800,110,shield),row);
  console.log('PASS: decorative dot selected beneath shield; menu rejected');
 }
+
+{
+ const {unreadDot}=require('./picker.js');
+ const el={getBoundingClientRect:()=>({width:14,height:14})};
+ const style=(e,p)=>p==='::before'?{width:'12px',height:'12px',backgroundColor:'rgb(255, 64, 107)'}:{backgroundColor:'rgba(0, 0, 0, 0)'};
+ assert.equal(unreadDot(el,style),true);
+ assert.equal(unreadDot(el,()=>({width:'12px',height:'12px',backgroundColor:'color(srgb 1 0.25 0.42)'})),true);
+ assert.equal(unreadDot(el,()=>({width:'12px',height:'12px',backgroundColor:'rgb(20, 20, 20)'})),false);
+ assert.equal(unreadDot(el,()=>({width:'12px',height:'12px',backgroundColor:'rgb(255, 64, 107)',opacity:'0'})),false);
+ console.log('PASS: CSS pseudo-element dot, sRGB color, hidden and non-red dots');
+}

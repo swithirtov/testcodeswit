@@ -32,7 +32,7 @@ function richSnapshot(){
  for(const row of candidates){
   let badge;try{badge=row.querySelector(mapping?.badge||'[data-marker*="unread"]');}catch{}
   if(!shown(row)||!shown(badge))continue;
-  if(mapping?.badgeKind==='red' && !WatchPicker.redDot(badge,getComputedStyle(badge)))continue;
+  if(mapping?.badgeKind==='red' && !WatchPicker.unreadDot(badge,getComputedStyle))continue;
   const info=chatInfo(row,mapping);
   if(!info.id||!info.name||!info.preview)continue;
   rows[info.id]=JSON.stringify([info.name,info.preview,count(badge)]);
@@ -40,7 +40,7 @@ function richSnapshot(){
  }
  if(messages.length)return {found:true,count:messages.length,rows,messages,mode:'details',details:'Имена и превью распознаны: '+messages.length+' диалогов'};
  // A known mapped list with rows but no unread badges is a confirmed zero.
- if(mapping && candidates.some(shown) && candidates.every(r=>{try{const b=r.querySelector(mapping.badge);return !shown(b)||(mapping.badgeKind==='red' && !WatchPicker.redDot(b,getComputedStyle(b)));}catch{return false;}}))return {found:true,count:0,rows:{},messages:[],mode:'details',details:'Список чатов распознан, непрочитанных не видно'};
+ if(mapping && candidates.some(shown) && candidates.every(r=>{try{const b=r.querySelector(mapping.badge);return !shown(b)||(mapping.badgeKind==='red' && !WatchPicker.unreadDot(b,getComputedStyle));}catch{return false;}}))return {found:true,count:0,rows:{},messages:[],mode:'details',details:'Список чатов распознан, непрочитанных не видно'};
  return null;
 }
 function inspect(){
@@ -91,7 +91,6 @@ function move(e){if(highlighted)highlighted.style.outline=highlighted.dataset.wa
 function stop(){picking=false;learnStep=-1;learned=[];if(highlighted){highlighted.style.outline=highlighted.dataset.watchOldOutline||'';delete highlighted.dataset.watchOldOutline;}tip?.remove();shield?.remove();shield=null;document.removeEventListener('mousemove',move,true);document.removeEventListener('click',click,true);document.removeEventListener('keydown',key,true);}
 function click(e){e.preventDefault();e.stopImmediatePropagation();if(e.target===tip)return;const target=targetAt(e);if(!target)return;
  if(learnStep>=0){
-  if(learnStep===2 && !WatchPicker.redDot(target,getComputedStyle(target)) && !/unread/i.test(target.getAttribute('data-marker')||target.className||'')){tip.textContent='Нужен именно красный кружок непрочитанного чата, не троеточие. Попробуй центр кружка. Esc — отмена.';return;}
   learned.push(target);learnStep++;
   if(learnStep===1){tip.textContent='Теперь нажми на текст последнего сообщения В ЭТОМ ЖЕ непрочитанном чате.';return;}
   if(learnStep===2){tip.textContent='Теперь нажми на значок/число непрочитанных В ЭТОМ ЖЕ чате.';return;}
@@ -100,7 +99,7 @@ function click(e){e.preventDefault();e.stopImmediatePropagation();if(e.target===
   const marker=row.getAttribute('data-marker');let rowSelector;
   if(marker && document.querySelectorAll('[data-marker="'+CSS.escape(marker)+'"]').length>1)rowSelector='[data-marker="'+CSS.escape(marker)+'"]';
   else rowSelector=cssPath(row.parentElement)+' > '+row.tagName.toLowerCase();
-  mapping={row:rowSelector,name:relative(learned[0],row),preview:relative(learned[1],row),badge:relative(learned[2],row),badgeKind:WatchPicker.redDot(learned[2],getComputedStyle(learned[2]))?'red':'marker'};
+  mapping={row:rowSelector,name:relative(learned[0],row),preview:relative(learned[1],row),badge:relative(learned[2],row),badgeKind:WatchPicker.unreadDot(learned[2],getComputedStyle)?'red':'marker'};
   stop();send({type:'mapping',mapping});setTimeout(inspect,300);return;
  }
  const n=count(target);if(n===null){tip.textContent='Нужно нажать именно на число непрочитанных. Esc — отмена.';return;}const link=target.closest('a[href*="messenger"], [data-marker*="header"] a, [data-marker*="header"] button');selector=cssPath(link||target);stop();send({type:'picked',selector});setTimeout(inspect,300);}
