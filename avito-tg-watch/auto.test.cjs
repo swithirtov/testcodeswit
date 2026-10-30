@@ -19,5 +19,14 @@ const snap=async(count,name='Иван')=>{listener({type:'autoSnapshot',snapshot
  await assert.rejects(()=>context.WatchAuto.fill(map,'overwrite',true),/черновик/);
  field.value='';header.textContent='Другой';await assert.rejects(()=>context.WatchAuto.fill(map,'wrong',true),/Имя/);assert.equal(clicks,0);
  header.textContent='Иван';assert.equal((await context.WatchAuto.fill(map,'Привет!',true)).status,'attempted');assert.equal(clicks,1);
+ context.getComputedStyle=e=>e.style;
+ const scope={getBoundingClientRect:()=>({left:570,right:1395,width:825})};
+ const bubble=(left,width,color)=>({style:{backgroundColor:color,borderTopLeftRadius:'20px'},getBoundingClientRect:()=>({left,right:left+width,width})});
+ const rule={background:'rgb(242, 242, 242)'};
+ assert.equal(context.WatchAuto.matchesVisual(bubble(600,450,rule.background),scope,rule),true);
+ assert.equal(context.WatchAuto.matchesVisual(bubble(1106,258,'rgb(229, 247, 255)'),scope,rule),false);
+ assert.equal(context.WatchAuto.matchesVisual(bubble(1106,258,rule.background),scope,rule),false);
+ assert.equal(context.WatchAuto.matchesVisual(bubble(600,790,rule.background),scope,rule),false);
  console.log('PASS: old history skipped; one action only; wrong chat blocked; draft retained; draft and send paths');
+ console.log('PASS: left incoming bubble matched; right outgoing and full-width panels rejected');
 })().catch(e=>{console.error(e);process.exitCode=1});

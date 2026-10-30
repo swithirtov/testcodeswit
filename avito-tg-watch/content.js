@@ -96,8 +96,8 @@ function saveAuto(){
  const [header,incoming,editor,button]=learned;
  const field=editor.closest('textarea,input,[contenteditable="true"]')||editor;
  const sendButton=button.closest('button,[role="button"]')||button;
- const spec=WatchAuto.reusable(incoming);
- autoMapping={route:location.pathname+location.search,name:norm(header.textContent),header:cssPath(header),incoming:spec.selector,editor:cssPath(field),button:cssPath(sendButton)};
+ const spec=WatchAuto.reusable(incoming,cssPath);
+ autoMapping={route:location.pathname+location.search,name:norm(header.textContent),header:cssPath(header),incoming:spec.selector,incomingRule:spec.visual||null,editor:cssPath(field),button:cssPath(sendButton)};
  stop();send({type:'autoMapping',mapping:autoMapping});
  alert(spec.direction?'Тестовый чат настроен. Включи автоответ в настройках расширения.':'Чат настроен для черновика. Направление сообщений не распознано — автоматическая отправка заблокирована.');
 }
