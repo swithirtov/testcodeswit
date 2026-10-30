@@ -1,11 +1,50 @@
 (()=>{
-let selector='',timer, picking=false, highlighted=null,tip=null;
+let mapping=null, learnStep=-1, learned=[],selector='',timer, picking=false, highlighted=null,tip=null;
 const send=msg=>chrome.runtime.sendMessage(msg).catch(()=>{});
 const norm=t=>(t||'').replace(/\s+/g,' ').trim();
 const shown=e=>e && e.getClientRects().length>0;
-function count(e){const text=norm(e.textContent)||e.getAttribute('aria-label')||'';const n=text.match(/\d+/);return n?Math.min(100000,Number(n[0])):null;}
+function count(e){const badge=e.querySelector?.('[data-marker*="unread"]');const text=norm(badge?.textContent)||norm(e.textContent)||e.getAttribute('aria-label')||'';const n=text.match(/^\s*(\d+)\+?\s*$/) || text.match(/^(\d+)\s+непрочитан/i) || text.match(/^(?:Сообщения|Непрочитанные)\s*(\d+)\+?$/i);return n?Math.min(100000,Number(n[0])):null;}
+
+function relative(el,root){
+ const parts=[];while(el!==root && el?.parentElement){const peers=[...el.parentElement.children].filter(x=>x.tagName===el.tagName);parts.unshift(el.tagName.toLowerCase()+':nth-of-type('+(peers.indexOf(el)+1)+')');el=el.parentElement;}return parts.length?':scope > '+parts.join(' > '):':scope';
+}
+function chatInfo(row, fields){
+ const get=(key,fallback)=>{try{return row.querySelector(fields?.[key]||fallback);}catch{return null;}};
+ const name=norm(get('name','[data-marker*="interlocutor"], [data-marker*="participant"], [data-marker*="user-name"], [data-marker*="userName"], [data-marker*="channel-title"], [data-marker*="channel/name"]')?.textContent).slice(0,120);
+ const preview=norm(get('preview','[data-marker*="last-message"], [data-marker*="lastMessage"], [data-marker*="preview"]')?.textContent).slice(0,700);
+ const title=norm(row.querySelector('[data-marker*="item-title"], [data-marker*="itemTitle"]')?.textContent).slice(0,160);
+ const a=row.matches('a[href*="messenger"]')?row:row.querySelector('a[href*="messenger"]');
+ let url='';if(a){try{const u=new URL(a.getAttribute('href'),location.origin);if(['avito.ru','www.avito.ru'].includes(u.hostname) && /messenger/.test(u.pathname))url=u.href;}catch{}}
+ const id=url||row.getAttribute('data-id')||row.getAttribute('data-channel-id')||(name?name+'|'+title:'');
+ return {name,preview,title,url,id};
+}
+function richSnapshot(){
+ let candidates=[];
+ if(mapping){try{candidates=[...document.querySelectorAll(mapping.row)];}catch{}}
+ else {
+  for(const b of document.querySelectorAll('[data-marker*="unread"]')){
+   const row=b.closest('[data-marker*="channel"], [data-marker*="conversation"], [data-marker*="chat-item"], [data-marker*="dialog"]');
+   // Badge itself may contain "channel"; require separate name + preview within row.
+   if(row && !candidates.includes(row))candidates.push(row);
+  }
+ }
+ const rows={},messages=[];
+ for(const row of candidates){
+  let badge;try{badge=row.querySelector(mapping?.badge||'[data-marker*="unread"]');}catch{}
+  if(!shown(row)||!shown(badge))continue;
+  const info=chatInfo(row,mapping);
+  if(!info.id||!info.name||!info.preview)continue;
+  rows[info.id]=JSON.stringify([info.name,info.preview,count(badge)]);
+  messages.push(info);
+ }
+ if(messages.length)return {found:true,count:messages.length,rows,messages,mode:'details',details:'Имена и превью распознаны: '+messages.length+' диалогов'};
+ // A known mapped list with rows but no unread badges is a confirmed zero.
+ if(mapping && candidates.some(shown) && candidates.every(r=>{try{return !shown(r.querySelector(mapping.badge));}catch{return false;}}))return {found:true,count:0,rows:{},messages:[],mode:'details',details:'Список чатов распознан, непрочитанных не видно'};
+ return null;
+}
 function inspect(){
   if(picking)return;
+  const rich=richSnapshot();if(rich){send({type:'snapshot',snapshot:rich});return;}
   let snap={found:false,count:0,rows:{},mode:selector?'manual:'+selector:'auto',details:'Счётчик не распознан. Открой список сообщений или выбери счётчик вручную.'};
   if(selector){
     let e;try{e=document.querySelector(selector);}catch{}
@@ -44,11 +83,24 @@ function cssPath(el){
   return 'body > '+parts.join(' > ');
 }
 function move(e){if(highlighted)highlighted.style.outline=highlighted.dataset.watchOldOutline||'';highlighted=e.target;if(highlighted===tip)return;highlighted.dataset.watchOldOutline=highlighted.style.outline;highlighted.style.outline='3px solid #a78bfa';}
-function stop(){picking=false;if(highlighted){highlighted.style.outline=highlighted.dataset.watchOldOutline||'';delete highlighted.dataset.watchOldOutline;}tip?.remove();document.removeEventListener('mousemove',move,true);document.removeEventListener('click',click,true);document.removeEventListener('keydown',key,true);}
-function click(e){e.preventDefault();e.stopImmediatePropagation();if(e.target===tip)return;const n=count(e.target);if(n===null){tip.textContent='Нужно нажать именно на число непрочитанных. Esc — отмена.';return;}const link=e.target.closest('a[href*="messenger"], [data-marker*="header"] a, [data-marker*="header"] button');selector=cssPath(link||e.target);stop();send({type:'picked',selector});setTimeout(inspect,300);}
+function stop(){picking=false;learnStep=-1;learned=[];if(highlighted){highlighted.style.outline=highlighted.dataset.watchOldOutline||'';delete highlighted.dataset.watchOldOutline;}tip?.remove();document.removeEventListener('mousemove',move,true);document.removeEventListener('click',click,true);document.removeEventListener('keydown',key,true);}
+function click(e){e.preventDefault();e.stopImmediatePropagation();if(e.target===tip)return;
+ if(learnStep>=0){
+  learned.push(e.target);learnStep++;
+  if(learnStep===1){tip.textContent='Теперь нажми на текст последнего сообщения В ЭТОМ ЖЕ непрочитанном чате.';return;}
+  if(learnStep===2){tip.textContent='Теперь нажми на значок/число непрочитанных В ЭТОМ ЖЕ чате.';return;}
+  let row=learned[0];while(row && !learned.every(x=>row.contains(x)))row=row.parentElement;
+  if(!row || row===document.body || norm(row.textContent).length>2500){stop();alert('Не удалось выделить одну строку. Повтори настройку, выбирая элементы одного чата.');return;}
+  const marker=row.getAttribute('data-marker');let rowSelector;
+  if(marker && document.querySelectorAll('[data-marker="'+CSS.escape(marker)+'"]').length>1)rowSelector='[data-marker="'+CSS.escape(marker)+'"]';
+  else rowSelector=cssPath(row.parentElement)+' > '+row.tagName.toLowerCase();
+  mapping={row:rowSelector,name:relative(learned[0],row),preview:relative(learned[1],row),badge:relative(learned[2],row)};
+  stop();send({type:'mapping',mapping});setTimeout(inspect,300);return;
+ }
+ const n=count(e.target);if(n===null){tip.textContent='Нужно нажать именно на число непрочитанных. Esc — отмена.';return;}const link=e.target.closest('a[href*="messenger"], [data-marker*="header"] a, [data-marker*="header"] button');selector=cssPath(link||e.target);stop();send({type:'picked',selector});setTimeout(inspect,300);}
 function key(e){if(e.key==='Escape')stop();}
-function pick(){if(picking)stop();picking=true;tip=document.createElement('div');tip.textContent='Нажми на число непрочитанных сообщений. Esc — отмена.';tip.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#251b40;color:white;padding:18px 24px;border:1px solid #a78bfa;border-radius:14px;z-index:2147483647;font:16px sans-serif;box-shadow:0 8px 40px #0006';document.body.append(tip);document.addEventListener('mousemove',move,true);document.addEventListener('click',click,true);document.addEventListener('keydown',key,true);}
-chrome.runtime.onMessage.addListener(msg=>{if(msg.type==='pick')pick();if(msg.type==='scan')chrome.runtime.sendMessage({type:'getSelector'},s=>{selector=s||'';inspect();});});
+function pick(details=false){if(picking)stop();learnStep=details?0:-1;learned=[];picking=true;tip=document.createElement('div');tip.textContent=details?'Нажми на ИМЯ отправителя в непрочитанном чате. Esc — отмена.':'Нажми на число непрочитанных сообщений. Esc — отмена.';tip.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#251b40;color:white;padding:18px 24px;border:1px solid #a78bfa;border-radius:14px;z-index:2147483647;font:16px sans-serif;box-shadow:0 8px 40px #0006';document.body.append(tip);document.addEventListener('mousemove',move,true);document.addEventListener('click',click,true);document.addEventListener('keydown',key,true);}
+chrome.runtime.onMessage.addListener(msg=>{if(msg.type==='pick')pick();if(msg.type==='pickDetails')pick(true);if(msg.type==='scan')chrome.runtime.sendMessage({type:'getSelector'},s=>{selector=s?.selector||'';mapping=s?.mapping||null;inspect();});});
 new MutationObserver(()=>{clearTimeout(timer);timer=setTimeout(inspect,700);}).observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['data-marker','aria-label']});
-chrome.runtime.sendMessage({type:'getSelector'},s=>{selector=s||'';inspect();});
+chrome.runtime.sendMessage({type:'getSelector'},s=>{selector=s?.selector||'';mapping=s?.mapping||null;inspect();});
 })();

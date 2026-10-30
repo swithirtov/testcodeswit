@@ -7,8 +7,8 @@ async function refresh(initial=false){
  $('sent').textContent=d.lastSent?'Последний сигнал: '+new Date(d.lastSent).toLocaleTimeString():'';
  if(d.lastError)$('message').textContent=d.lastError;
 }
-for(const type of ['save','test','scan','pick','auto'])$(type).addEventListener('click',async()=>{
+for(const type of ['save','test','scan','pick','pickDetails','auto'])$(type).addEventListener('click',async()=>{
  const b=$(type);b.disabled=true;$('message').textContent='Секунду…';
- try{const r=await request({type,settings:config()});if(r?.error)throw Error(r.error);$('message').textContent=type==='test'?'Тест отправлен. Проверь Telegram.':type==='save'?'Сохранено.':type==='pick'?'Выбери число на странице Авито.':'Готово.';if(type==='pick')window.close();await refresh();}catch(e){$('message').textContent=e.message;}finally{b.disabled=false;}
+ try{const r=await request({type,settings:config()});if(r?.error)throw Error(r.error);$('message').textContent=type==='test'?'Тест отправлен. Проверь Telegram.':type==='save'?'Сохранено.':type==='pick'?'Выбери число на странице Авито.':'Готово.';if(type==='pick'||type==='pickDetails')window.close();await refresh();}catch(e){$('message').textContent=e.message;}finally{b.disabled=false;}
 });
 refresh(true);setInterval(()=>refresh(),2500);
