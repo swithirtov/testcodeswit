@@ -1,17 +1,9 @@
 <!doctype html><html lang="ru"><meta charset="utf-8"><title>Авито → ТГ</title><link rel="stylesheet" href="popup.css"><body>
-<header><span class="tag">29WAY / TOOLS</span><h1>Авито <span>→</span> ТГ</h1><p>Чтобы клиент не потерялся среди вкладок.</p></header>
-<label class="switch"><input id="enabled" type="checkbox"> Следить за сообщениями</label>
-<label>Токен Telegram-бота<input id="token" type="password" placeholder="Из @BotFather" autocomplete="off"></label>
-<label>Твой Chat ID<input id="chatId" placeholder="Например: 123456789" autocomplete="off"></label>
-<label class="switch"><input id="desktop" type="checkbox"> Ещё уведомлять в Windows</label>
+<header><span class="tag">29WAY / TOOLS</span><h1>Авито <span>→</span> ТГ</h1><p>Только уведомления по счётчику.</p></header>
+<label class="switch"><input id="enabled" type="checkbox"> Следить за непрочитанными</label>
+<label>Токен Telegram-бота<input id="token" type="password" autocomplete="off"></label>
+<label>Твой Chat ID<input id="chatId" autocomplete="off"></label>
+<label class="switch"><input id="desktop" type="checkbox"> Уведомления Windows</label>
 <div class="buttons"><button id="save">Сохранить</button><button id="test" class="secondary">Тест ТГ</button></div>
-<section><h2>Проверка вкладки</h2><div id="status">Пока нет данных</div><div id="sent"></div><div class="buttons"><button id="scan" class="secondary">Проверить</button><button id="pick" class="secondary">Выбрать счётчик</button></div><button id="pickDetails" class="secondary">Настроить имена и текст</button><br><button id="auto" class="link">Вернуть автоопределение</button></section>
-<section><h2>Автоответ · тест в одном чате</h2>
-<label class="switch"><input id="autoEnabled" type="checkbox"> Ждать новое входящее в тестовом чате</label>
-<label>Текст ответа<textarea id="autoText" rows="3"></textarea></label>
-<label class="switch"><input id="autoSend" type="checkbox"> Отправить автоматически (один раз)</label>
-<p style="font-size:11px">Без этой галочки только заполнит черновик. После одного ответа тест останавливается. Для нового теста выключи слежение за входящим, сохрани, включи и сохрани снова.</p>
-<button id="pickAuto" class="secondary">Настроить открытый тестовый чат</button>
-<button id="prepareAuto" class="secondary">Подготовить тестовый черновик</button>
-<div id="autoStatus" style="font-size:12px;margin-top:10px"></div></section>
-<div id="message" role="status"></div><footer>Оставь открытым список сообщений Авито. Компьютер и браузер должны работать. Проверка каждые ~30 секунд и при изменениях страницы. Это пробная версия: сначала проверь входящим сообщением.</footer><script src="popup.js"></script></body></html>
+<section><h2>Счётчик сообщений</h2><div id="status"></div><div id="sent"></div><div class="buttons"><button id="pick" class="secondary">Выбрать число</button><button id="scan" class="secondary">Проверить</button></div></section>
+<div id="message" role="status"></div><footer>Выбери общее число непрочитанных сообщений. При запуске старый счётчик запоминается без уведомления. Сигнал приходит только при его росте. Если новые сообщения не меняют число — сигнал может не прийти. Оставь Авито и браузер открытыми.</footer><script src="popup.js"></script></body></html>
