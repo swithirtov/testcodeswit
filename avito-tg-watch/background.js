@@ -5,7 +5,7 @@ async function init(){
   if(!await chrome.alarms.get('scan')) await chrome.alarms.create('scan',{periodInMinutes:0.5});
 }
 init().catch(()=>{});
-chrome.runtime.onInstalled.addListener(()=>init());
+chrome.runtime.onInstalled.addListener(async()=>{await chrome.storage.local.set({baseline:null,baselines:{}});await init();});
 chrome.runtime.onStartup.addListener(()=>init());
 async function settings(){return (await chrome.storage.local.get('settings')).settings || {enabled:false,desktop:true};}
 function safeUrl(raw){try{const u=new URL(raw);if(u.protocol==='https:' && ['www.avito.ru','avito.ru'].includes(u.hostname))return u.href;}catch{}return 'https://www.avito.ru/profile/messenger';}
@@ -31,24 +31,26 @@ async function snapshot(msg,sender){
   const status={at:Date.now(),tabId:tab.id,mode:snap.mode,found:snap.found,count:snap.count,details:String(snap.details || '').slice(0,300)};
   await chrome.storage.local.set({status});
   if(!cfg.enabled || !snap.found)return;
-  const saved=await chrome.storage.local.get(['monitorTab','baseline']);
+  const saved=await chrome.storage.local.get(['monitorTab','baseline','baselines']);
   // One tab only: avoids conflicts between a header counter and messenger rows.
   if(saved.monitorTab && saved.monitorTab!==tab.id){try{await chrome.tabs.get(saved.monitorTab);return;}catch{}}
   if(saved.monitorTab!==tab.id)await chrome.storage.local.set({monitorTab:tab.id});
-  const result=WatchDetector.transition(saved.baseline,snap);
-  if(!result.notify){await chrome.storage.local.set({baseline:result.state});return;}
+  const previous=saved.baselines?.[snap.mode] || (saved.baseline?.mode===snap.mode?saved.baseline:null);
+  const result=WatchDetector.transition(previous,snap);
+  async function remember(state){await chrome.storage.local.set({baseline:state,baselines:{...(saved.baselines||{}),[snap.mode]:state}});}
+  if(!result.notify){await remember(result.state);return;}
   const url=safeUrl(tab.url);const text=`Авито: есть непрочитанные сообщения (${snap.count}).\nОткрой переписку:\n${url}`;
   // Retry failed Telegram delivery on the next scan; commit only after success.
   try{
     if(cfg.token && cfg.chatId){
-      const changed=(snap.messages||[]).filter(m=>m.id && result.state.rows[m.id]!==saved.baseline?.rows?.[m.id]);
+      const changed=(snap.messages||[]).filter(m=>m.id && result.state.rows[m.id]!==previous?.rows?.[m.id]);
       if(changed.length){
-        const progress={...result.state,rows:{...(saved.baseline?.rows||{})}};
+        const progress={...result.state,rows:{...(previous?.rows||{})}};
         for(const raw of changed.slice(0,20)){
           const info={name:String(raw.name||'').slice(0,120),preview:String(raw.preview||'').slice(0,700),title:String(raw.title||'').slice(0,160),url:raw.url?safeUrl(raw.url):''};
           await telegram(cfg,WatchFormat.format(info,url));
           progress.rows[raw.id]=result.state.rows[raw.id];
-          await chrome.storage.local.set({baseline:progress});
+          await remember(progress);
         }
         // Keep remaining unseen rows pending if more than 20 arrived together.
         if(changed.length>20){await chrome.storage.local.set({lastSent:Date.now(),lastError:''});return;}
@@ -56,7 +58,8 @@ async function snapshot(msg,sender){
     }
     else if(!cfg.desktop)throw Error('Укажи Telegram или включи уведомления Windows');
     if(cfg.desktop)await desktop(`Непрочитанных: ${snap.count}. Проверь переписку.`,url).catch(()=>{});
-    await chrome.storage.local.set({baseline:result.state,lastSent:Date.now(),lastError:''});
+    await remember(result.state);
+    await chrome.storage.local.set({lastSent:Date.now(),lastError:''});
   }catch(e){await chrome.storage.local.set({lastError:e.message});}
 }
 async function scanTabs(){
@@ -72,8 +75,8 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
   // Website scripts may submit snapshots, never read credentials or invoke tests.
   if(sender.tab){
     if(msg.type==='snapshot'){chain=chain.then(()=>snapshot(msg,sender)).catch(()=>{});}
-    else if(msg.type==='picked'){chrome.storage.local.set({selector:msg.selector,baseline:null,monitorTab:sender.tab.id});}
-    else if(msg.type==='mapping'){chrome.storage.local.set({mapping:msg.mapping,baseline:null,monitorTab:sender.tab.id});}
+    else if(msg.type==='picked'){chrome.storage.local.set({selector:msg.selector,baseline:null,baselines:{},monitorTab:sender.tab.id});}
+    else if(msg.type==='mapping'){chrome.storage.local.set({mapping:msg.mapping,baseline:null,baselines:{},monitorTab:sender.tab.id});}
     else if(msg.type==='getSelector'){chrome.storage.local.get(['selector','mapping']).then(reply);return true;}
     return;
   }
@@ -83,12 +86,12 @@ chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
       const old=await settings();const cfg=msg.settings;
       if(cfg.enabled && ((cfg.token && !cfg.chatId)||(!cfg.token && cfg.chatId)))throw Error('Заполни и токен, и Chat ID');
       await chrome.storage.local.set({settings:cfg,lastError:''});
-      if(!old.enabled && cfg.enabled)await chrome.storage.local.set({baseline:null});
+      if(!old.enabled && cfg.enabled)await chrome.storage.local.set({baseline:null,baselines:{}});
       await scanTabs();return {ok:true};
     }
     if(msg.type==='test'){await telegram(msg.settings,{text:'✅ <b>Авито → Telegram подключён</b>\n\nЭто тест отправки. Имя и текст появятся, когда расширение распознает непрочитанный чат.',parse_mode:'HTML'});return {ok:true};}
     if(msg.type==='scan'){await scanTabs();return {ok:true};}
-    if(msg.type==='auto'){await chrome.storage.local.set({selector:'',mapping:null,baseline:null});await scanTabs();return {ok:true};}
+    if(msg.type==='auto'){await chrome.storage.local.set({selector:'',mapping:null,baseline:null,baselines:{}});await scanTabs();return {ok:true};}
     if(msg.type==='pick'||msg.type==='pickDetails'){
       const tabs=await chrome.tabs.query({url:['https://www.avito.ru/*','https://avito.ru/*']});
       const tab=tabs.find(t=>t.active)||tabs.find(t=>/messenger/.test(t.url))||tabs[0];
