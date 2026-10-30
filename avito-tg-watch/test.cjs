@@ -38,3 +38,13 @@ assert.equal(format({name:'Иван'},'https://www.avito.ru/profile/messenger').
  assert.equal(sent[0].snapshot.rows['chat-42'],JSON.stringify(['Иван','Привет, обложку сделаешь?',1]));
  console.log('PASS: mapped DOM name, preview, identity extraction + escaped Telegram HTML');
 }
+{
+ const {atPoint,redDot}=require('./picker.js');
+ const box=(left,top,width,height,extra={})=>({getBoundingClientRect:()=>({left,top,right:left+width,bottom:top+height,width,height}),...extra});
+ const row=box(0,0,900,120),menu=box(745,60,40,40),dot=box(769,72,12,12,{pointerEvents:'none'}),shield=box(0,0,1400,900);
+ assert.equal(atPoint([shield,row,menu,dot],775,78,shield),dot);
+ assert.equal(redDot(dot,{backgroundColor:'rgb(255, 62, 90)'}),true);
+ assert.equal(redDot(menu,{backgroundColor:'rgb(255, 255, 255)'}),false);
+ assert.equal(atPoint([shield,row,menu,dot],800,110,shield),row);
+ console.log('PASS: decorative dot selected beneath shield; menu rejected');
+}

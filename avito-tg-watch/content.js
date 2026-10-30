@@ -1,5 +1,5 @@
 (()=>{
-let mapping=null, learnStep=-1, learned=[],selector='',timer, picking=false, highlighted=null,tip=null;
+let mapping=null, learnStep=-1, learned=[],selector='',timer, picking=false, highlighted=null,tip=null,shield=null;
 const send=msg=>chrome.runtime.sendMessage(msg).catch(()=>{});
 const norm=t=>(t||'').replace(/\s+/g,' ').trim();
 const shown=e=>e && e.getClientRects().length>0;
@@ -32,6 +32,7 @@ function richSnapshot(){
  for(const row of candidates){
   let badge;try{badge=row.querySelector(mapping?.badge||'[data-marker*="unread"]');}catch{}
   if(!shown(row)||!shown(badge))continue;
+  if(mapping?.badgeKind==='red' && !WatchPicker.redDot(badge,getComputedStyle(badge)))continue;
   const info=chatInfo(row,mapping);
   if(!info.id||!info.name||!info.preview)continue;
   rows[info.id]=JSON.stringify([info.name,info.preview,count(badge)]);
@@ -39,7 +40,7 @@ function richSnapshot(){
  }
  if(messages.length)return {found:true,count:messages.length,rows,messages,mode:'details',details:'Имена и превью распознаны: '+messages.length+' диалогов'};
  // A known mapped list with rows but no unread badges is a confirmed zero.
- if(mapping && candidates.some(shown) && candidates.every(r=>{try{return !shown(r.querySelector(mapping.badge));}catch{return false;}}))return {found:true,count:0,rows:{},messages:[],mode:'details',details:'Список чатов распознан, непрочитанных не видно'};
+ if(mapping && candidates.some(shown) && candidates.every(r=>{try{const b=r.querySelector(mapping.badge);return !shown(b)||(mapping.badgeKind==='red' && !WatchPicker.redDot(b,getComputedStyle(b)));}catch{return false;}}))return {found:true,count:0,rows:{},messages:[],mode:'details',details:'Список чатов распознан, непрочитанных не видно'};
  return null;
 }
 function inspect(){
@@ -82,11 +83,16 @@ function cssPath(el){
   while(el && el!==document.body){let part=el.tagName.toLowerCase();const siblings=[...el.parentElement.children].filter(e=>e.tagName===el.tagName);if(siblings.length>1)part+=':nth-of-type('+(siblings.indexOf(el)+1)+')';parts.unshift(part);el=el.parentElement;}
   return 'body > '+parts.join(' > ');
 }
-function move(e){if(highlighted)highlighted.style.outline=highlighted.dataset.watchOldOutline||'';highlighted=e.target;if(highlighted===tip)return;highlighted.dataset.watchOldOutline=highlighted.style.outline;highlighted.style.outline='3px solid #a78bfa';}
-function stop(){picking=false;learnStep=-1;learned=[];if(highlighted){highlighted.style.outline=highlighted.dataset.watchOldOutline||'';delete highlighted.dataset.watchOldOutline;}tip?.remove();document.removeEventListener('mousemove',move,true);document.removeEventListener('click',click,true);document.removeEventListener('keydown',key,true);}
-function click(e){e.preventDefault();e.stopImmediatePropagation();if(e.target===tip)return;
+function targetAt(e){
+ const candidates=[...document.querySelectorAll('body *')].filter(x=>x!==shield && x!==tip && !tip?.contains(x));
+ return WatchPicker.atPoint(candidates,e.clientX,e.clientY,shield);
+}
+function move(e){if(highlighted)highlighted.style.outline=highlighted.dataset.watchOldOutline||'';highlighted=targetAt(e);if(!highlighted || highlighted===tip)return;highlighted.dataset.watchOldOutline=highlighted.style.outline;highlighted.style.outline='3px solid #a78bfa';}
+function stop(){picking=false;learnStep=-1;learned=[];if(highlighted){highlighted.style.outline=highlighted.dataset.watchOldOutline||'';delete highlighted.dataset.watchOldOutline;}tip?.remove();shield?.remove();shield=null;document.removeEventListener('mousemove',move,true);document.removeEventListener('click',click,true);document.removeEventListener('keydown',key,true);}
+function click(e){e.preventDefault();e.stopImmediatePropagation();if(e.target===tip)return;const target=targetAt(e);if(!target)return;
  if(learnStep>=0){
-  learned.push(e.target);learnStep++;
+  if(learnStep===2 && !WatchPicker.redDot(target,getComputedStyle(target)) && !/unread/i.test(target.getAttribute('data-marker')||target.className||'')){tip.textContent='Нужен именно красный кружок непрочитанного чата, не троеточие. Попробуй центр кружка. Esc — отмена.';return;}
+  learned.push(target);learnStep++;
   if(learnStep===1){tip.textContent='Теперь нажми на текст последнего сообщения В ЭТОМ ЖЕ непрочитанном чате.';return;}
   if(learnStep===2){tip.textContent='Теперь нажми на значок/число непрочитанных В ЭТОМ ЖЕ чате.';return;}
   let row=learned[0];while(row && !learned.every(x=>row.contains(x)))row=row.parentElement;
@@ -94,12 +100,12 @@ function click(e){e.preventDefault();e.stopImmediatePropagation();if(e.target===
   const marker=row.getAttribute('data-marker');let rowSelector;
   if(marker && document.querySelectorAll('[data-marker="'+CSS.escape(marker)+'"]').length>1)rowSelector='[data-marker="'+CSS.escape(marker)+'"]';
   else rowSelector=cssPath(row.parentElement)+' > '+row.tagName.toLowerCase();
-  mapping={row:rowSelector,name:relative(learned[0],row),preview:relative(learned[1],row),badge:relative(learned[2],row)};
+  mapping={row:rowSelector,name:relative(learned[0],row),preview:relative(learned[1],row),badge:relative(learned[2],row),badgeKind:WatchPicker.redDot(learned[2],getComputedStyle(learned[2]))?'red':'marker'};
   stop();send({type:'mapping',mapping});setTimeout(inspect,300);return;
  }
- const n=count(e.target);if(n===null){tip.textContent='Нужно нажать именно на число непрочитанных. Esc — отмена.';return;}const link=e.target.closest('a[href*="messenger"], [data-marker*="header"] a, [data-marker*="header"] button');selector=cssPath(link||e.target);stop();send({type:'picked',selector});setTimeout(inspect,300);}
+ const n=count(target);if(n===null){tip.textContent='Нужно нажать именно на число непрочитанных. Esc — отмена.';return;}const link=target.closest('a[href*="messenger"], [data-marker*="header"] a, [data-marker*="header"] button');selector=cssPath(link||target);stop();send({type:'picked',selector});setTimeout(inspect,300);}
 function key(e){if(e.key==='Escape')stop();}
-function pick(details=false){if(picking)stop();learnStep=details?0:-1;learned=[];picking=true;tip=document.createElement('div');tip.textContent=details?'Нажми на ИМЯ отправителя в непрочитанном чате. Esc — отмена.':'Нажми на число непрочитанных сообщений. Esc — отмена.';tip.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#251b40;color:white;padding:18px 24px;border:1px solid #a78bfa;border-radius:14px;z-index:2147483647;font:16px sans-serif;box-shadow:0 8px 40px #0006';document.body.append(tip);document.addEventListener('mousemove',move,true);document.addEventListener('click',click,true);document.addEventListener('keydown',key,true);}
+function pick(details=false){if(picking)stop();learnStep=details?0:-1;learned=[];picking=true;tip=document.createElement('div');tip.textContent=details?'Нажми на ИМЯ отправителя в непрочитанном чате. Esc — отмена.':'Нажми на число непрочитанных сообщений. Esc — отмена.';tip.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#251b40;color:white;padding:18px 24px;border:1px solid #a78bfa;border-radius:14px;z-index:2147483647;font:16px sans-serif;box-shadow:0 8px 40px #0006';shield=document.createElement('div');shield.style.cssText='position:fixed;inset:0;z-index:2147483646;background:transparent;cursor:crosshair;';document.body.append(shield,tip);document.addEventListener('mousemove',move,true);document.addEventListener('click',click,true);document.addEventListener('keydown',key,true);}
 chrome.runtime.onMessage.addListener(msg=>{if(msg.type==='pick')pick();if(msg.type==='pickDetails')pick(true);if(msg.type==='scan')chrome.runtime.sendMessage({type:'getSelector'},s=>{selector=s?.selector||'';mapping=s?.mapping||null;inspect();});});
 new MutationObserver(()=>{clearTimeout(timer);timer=setTimeout(inspect,700);}).observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['data-marker','aria-label']});
 chrome.runtime.sendMessage({type:'getSelector'},s=>{selector=s?.selector||'';mapping=s?.mapping||null;inspect();});
